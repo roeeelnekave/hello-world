@@ -1,0 +1,42 @@
+# Block everything by default
+*
+
+# Allow specific file types we want
+!*.cs
+!*.csproj
+!*.sln
+!*.md
+!*.yml
+!*.yaml
+!*.json
+!*.xml
+!*.txt
+!*.gitignore
+!*.dockerignore
+
+# Allow specific directories we need
+!App/
+!.github/
+!.github/workflows/
+
+# But still block build outputs even if they match above extensions
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+**/bin/**
+**/obj/**
+
+# Block IDE and OS files
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Block sensitive files
+*.user
+*.suo
+.env
+*.log
