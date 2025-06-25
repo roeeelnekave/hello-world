@@ -13,6 +13,7 @@
 !*.txt
 !*.gitignore
 !*.dockerignore
+!Dockerfile
 
 # Allow specific directories we need
 !App/

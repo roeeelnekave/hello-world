@@ -1,0 +1,29 @@
+# Build outputs
+bin/
+obj/
+out/
+
+# Test results
+TestResults/
+coverage-report/
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# Docker files
+Dockerfile*
+.dockerignore
