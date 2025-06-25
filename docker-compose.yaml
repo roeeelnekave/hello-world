@@ -1,0 +1,32 @@
+services:
+  hello-world:
+    image: roeeelnekave/hello-world:${VERSION:-latest}
+    container_name: hello-world-app
+    
+    restart: "no"
+    
+    read_only: true
+
+    cap_drop: # Drops all Linux capabilities from the container for maximum security.
+      - ALL
+    security_opt: # Prevents the container from gaining any additional privileges, even if binaries have setuid/setgid.
+      - no-new-privileges:true
+    user: "1001:1001"
+    
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+        reservations:
+          memory: 64M
+          cpus: '0.05'
+    
+    environment:
+      - DOTNET_RUNNING_IN_CONTAINER=true
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

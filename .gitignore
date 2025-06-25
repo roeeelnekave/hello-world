@@ -41,6 +41,8 @@ coverage-report/
 *.coverage
 *.coveragexml
 *.cobertura.xml
+CoverletSourceRootsMapping_*
+.msCoverageSourceRootsMapping_*
 
 # Block IDE and OS files
 .vs/
@@ -63,3 +65,13 @@ Thumbs.db
 *.tmp
 *.temp
 *~
+
+# Block .git internals (they're managed automatically)
+.git/objects/
+.git/logs/
+.git/hooks/
+.git/refs/remotes/
+.git/info/
+.git/description
+.git/COMMIT_EDITMSG
+.git/index
