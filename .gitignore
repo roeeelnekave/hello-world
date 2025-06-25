@@ -16,6 +16,7 @@
 
 # Allow specific directories we need
 !App/
+!App.Tests/
 !.github/
 !.github/workflows/
 
