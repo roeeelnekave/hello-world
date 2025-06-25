@@ -24,21 +24,42 @@
 # But still block build outputs even if they match above extensions
 bin/
 obj/
+out/
 *.dll
 *.exe
 *.pdb
 **/bin/**
 **/obj/**
+**/out/**
+
+# Block test and coverage outputs
+TestResults/
+coverage-report/
+**/TestResults/**
+**/coverage-report/**
+*.trx
+*.coverage
+*.coveragexml
+*.cobertura.xml
 
 # Block IDE and OS files
 .vs/
 .vscode/
 .idea/
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
+*.swp
+*.swo
 
 # Block sensitive files
 *.user
 *.suo
 .env
 *.log
+
+# Block temporary files
+*.tmp
+*.temp
+*~
