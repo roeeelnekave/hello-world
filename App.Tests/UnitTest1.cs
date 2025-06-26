@@ -1,5 +1,5 @@
 ﻿using System;
-using System.IO; //for StringWriter
+using System.IO;
 using Xunit;
 
 namespace App.Tests
@@ -7,31 +7,14 @@ namespace App.Tests
     public class ProgramTests
     {
         [Fact]
-        public void HelloWorld_ReturnCorrectMessage()
+        public void HelloWorld_ShouldReturnHelloWorld()
         {
             var result = Program.HelloWorld();
-
             Assert.Equal("Hello World!", result);
         }
 
         [Fact]
-        public void GetHelloWorld_NotReturnNull()
-        {
-            var result = Program.HelloWorld();
-
-            Assert.NotNull(result);
-        }
-
-        [Fact]
-        public void HelloWorld_NotReturnEmpty()
-        {
-            var result = Program.HelloWorld();
-
-            Assert.NotEmpty(result);
-        }
-
-        [Fact]
-        public void Main_PrintToConsole()
+        public void Main_ShouldPrintHelloWorldToConsole()
         {
             var originalOut = Console.Out;
             using var stringWriter = new StringWriter();
@@ -39,7 +22,7 @@ namespace App.Tests
 
             try
             {
-                Program.Main(new string[] { });
+                Program.Main(Array.Empty<string>());
 
                 var output = stringWriter.ToString().Trim();
                 Assert.Equal("Hello World!", output);
