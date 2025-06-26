@@ -7,6 +7,8 @@ Repository: https://github.com/roeeelnekave/hello-world.git
 ### Docker Hub
 
 ```bash
+# Prerequisite: Docker
+
 # Pull and run latest image
 docker pull roeeelnekave/hello-world:latest
 docker run --rm roeeelnekave/hello-world:latest
@@ -18,6 +20,7 @@ docker run --rm roeeelnekave/hello-world:1.0.0-build.3
 
 ### Docker Compose
 ```bash
+# Prerequisite: Docker and Docker Compose plugin
 # Clone repository
 git clone https://github.com/roeeelnekave/hello-world.git
 cd hello-world
@@ -31,6 +34,8 @@ VERSION=1.0.0-build.3 docker compose up hello-world```
 
 ### Kubernetes
 ```bash
+# Prerequisite: kubectl must be installed and configured to a running Kubernetes cluster (e.g., Minikube, EKS)
+
 # Clone repository  
 git clone https://github.com/roeeelnekave/hello-world.git
 cd hello-world
@@ -52,6 +57,8 @@ kubectl logs job/hello-world-job
 ## Development
 
 ```bash
+# Prerequisite: .NET SDK 8.0 or higher
+
 # Clone repository
 git clone https://github.com/roeeelnekave/hello-world.git
 cd hello-world
@@ -71,9 +78,17 @@ docker build -t hello-world .
 ## Pipeline Testing (Act)
 
 ```bash
+# Prerequisite: 
+   - A DockerHub account
+   - A DockerHub personal access token (PAT)
+   - .NET SDK 8.0+
+   - Docker
+   - act CLI
+
+
 # Create secrets file for authentication (DockerHub + GitHub Token)
 cat <<EOF > .secrets
-DOCKERHUB_USER=roeeelnekave
+DOCKERHUB_USER=<your-dockerhub-user>
 DOCKERHUB_TOKEN=<your-dockerhub-access-token>
 GITHUB_TOKEN=<your-github-personal-access-token>
 EOF
