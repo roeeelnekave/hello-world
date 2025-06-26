@@ -3,203 +3,400 @@ name: Hello World CI/CD Pipeline
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 env:
   REGISTRY: docker.io
   IMAGE_NAME: roeeelnekave/hello-world
+  DOTNET_VERSION: '8.0.x'
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
-  # Job 1 - Build, Test and Generate Version
-  build-and-test:
+  versioning:
+    name: Version Management
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.versioning.outputs.version }}
-      
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Fetches the entire Git history, including all commits and tags.
-        
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: '9.0.x'
-        
-    - name: Restore dependencies
-      run: dotnet restore
-      
-    - name: Build
-      run: dotnet build --no-restore --configuration Release
-      
-    - name: Test
-      run: dotnet test --no-build --configuration Release --verbosity normal
-      
-    # Generate semantic version from Git tags
-    - name: Generate version
+        fetch-depth: 0
+
+    - name: Generate version from Git tags
       id: versioning
       run: |
         LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
         VERSION=${LATEST_TAG#v}
 
         if ! git describe --exact-match --tags HEAD >/dev/null 2>&1; then
-          BUILD_NUMBER=${{ github.run_number }}
-          VERSION="${VERSION}-build.${BUILD_NUMBER}"
+          if [ "${ACT}" = "true" ]; then
+            BUILD_NUMBER="$(date +"%Y-%m-%dT%H-%M-%S")"
+            VERSION="${VERSION}-local.${BUILD_NUMBER}"
+          else
+            BUILD_NUMBER="${{ github.run_number }}"
+            VERSION="${VERSION}-build.${BUILD_NUMBER}"
+          fi
         fi
 
         echo "Generated version: $VERSION"
-
         echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-
-  containerise:
+  build:
+    name: Build Application
     runs-on: ubuntu-latest
-    needs: build-and-test
-    outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
-      
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      
-    - name: Extract metadata
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ env.IMAGE_NAME }}
-        tags: |
-          type=raw,value=${{ needs.build-and-test.outputs.version }}
-          type=raw,value=latest
-          
-    - name: Build Docker image (Multi-stage)
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        push: false
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
-        outputs: type=docker,dest=/tmp/image.tar
-        
-    - name: Upload Docker image (in GitHub Actions)
-      uses: actions/upload-artifact@v4
-      with:
-        name: docker-image
-        path: /tmp/image.tar
-
-  security-scan:
-    runs-on: ubuntu-latest
-    needs: [build-and-test, containerise]
-    if: github.event_name == 'push'
-
-    permissions: # Grants the job permission to write security scan results and read repository contents.
-      security-events: write
-      contents: read
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Download Docker image
-      uses: actions/download-artifact@v4
-      with:
-        name: docker-image
-        path: /tmp
-        
-    - name: Load Docker image
-      run: docker load --input /tmp/image.tar
-      
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: '${{ env.IMAGE_NAME }}:${{ needs.build-and-test.outputs.version }}'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
-        severity: 'CRITICAL,HIGH'
-        exit-code: '1'
-        
-    - name: Upload Trivy scan results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
-
-  # Job 4 - Push
-  push-to-registry:
-    runs-on: ubuntu-latest
-    needs: [build-and-test, containerise, security-scan]
-    if: github.event_name == 'push'
+    needs: versioning
     
     steps:
-    - name: Download Docker image
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Cache .NET packages
+      if: env.ACT != 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --no-restore --configuration Release -p:Version=${{ needs.versioning.outputs.version }}
+
+    - name: Upload build artifacts
+      if: env.ACT != 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-output
+        path: |
+          **/bin/Release/
+          **/obj/Release/
+        retention-days: 1
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: [versioning, build]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Download build artifacts
+      if: env.ACT != 'true'
       uses: actions/download-artifact@v4
       with:
-        name: docker-image
-        path: /tmp
-        
-    - name: Load Docker image
-      run: docker load --input /tmp/image.tar
-      
+        name: build-output
+
+    - name: Restore dependencies for ACT
+      if: env.ACT == 'true'
+      run: dotnet restore
+
+    - name: Run tests
+      run: dotnet test App.sln --configuration Release --no-build --verbosity normal
+
+
+  publish:
+    name: Publish Application
+    runs-on: ubuntu-latest
+    needs: [versioning, build, test]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Download build artifacts
+      if: env.ACT != 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: build-output
+
+    - name: Publish application
+      if: env.ACT != 'true'
+      run: |
+        dotnet publish \
+          --no-build \
+          --configuration Release \
+          --output ./publish \
+          -p:Version=${{ needs.versioning.outputs.version }}
+
+    - name: Publish application (ACT)
+      if: env.ACT == 'true'
+      run: |
+        dotnet restore
+        dotnet publish \
+          --configuration Release \
+          --output ./publish \
+          -p:Version=${{ needs.versioning.outputs.version }}
+
+    - name: Upload publish artifacts
+      if: env.ACT != 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: dotnet-publish
+        path: ./publish
+        retention-days: 1
+
+    - name: Upload source for Docker build
+      if: env.ACT != 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: source-code
+        path: |
+          .
+          !.git
+          !.github
+          !bin
+          !obj
+          !publish
+        retention-days: 1
+
+  docker-build-scan:
+    name: Build Docker Image & Security Scan
+    runs-on: ubuntu-latest
+    needs: versioning
+    if: ${{ always() && (needs.versioning.result == 'success') }}
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET (for act only)
+      if: env.ACT == 'true'
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore, Build and Publish locally (for act)
+      if: env.ACT == 'true'
+      run: |
+        dotnet restore
+        dotnet publish --configuration Release --output ./publish
+
+    - name: Download source artifacts
+      if: env.ACT != 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: source-code
+        continue-on-error: true
+
+    - name: Download publish artifacts
+      if: env.ACT != 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: dotnet-publish
+        path: ./publish
+        continue-on-error: true
+
     - name: Log in to Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USER }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
-        
-    - name: Push to Docker Hub
-      run: |
-        docker push ${{ env.IMAGE_NAME }}:${{ needs.build-and-test.outputs.version }}
-        docker push ${{ env.IMAGE_NAME }}:latest
 
-  test-container:
+    - name: Extract metadata (GitHub Actions only)
+      if: env.ACT != 'true'
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.IMAGE_NAME }}
+        tags: |
+          type=raw,value=${{ needs.versioning.outputs.version }}
+          type=raw,value=latest
+
+    - name: Build Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ${{ env.ACT == 'true' && 'Dockerfile.act' || 'Dockerfile' }}
+        push: false
+        tags: |
+          ${{ env.IMAGE_NAME }}:${{ needs.versioning.outputs.version }}
+          ${{ env.IMAGE_NAME }}:latest
+        labels: ${{ env.ACT != 'true' && steps.meta.outputs.labels || '' }}
+        cache-from: ${{ env.ACT != 'true' && 'type=gha' || '' }}
+        cache-to: ${{ env.ACT != 'true' && 'type=gha,mode=max' || '' }}
+        build-args: |
+          VERSION=${{ needs.versioning.outputs.version }}
+        platforms: linux/amd64
+
+    - name: Run Trivy vulnerability scanner
+      if: env.ACT != 'true'
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: '${{ env.IMAGE_NAME }}:${{ needs.versioning.outputs.version }}'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+        exit-code: '1'
+
+    - name: Upload Trivy scan results to GitHub Security
+      if: env.ACT != 'true' && always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  docker-push:
+    name: Push Docker Image
     runs-on: ubuntu-latest
-    needs: [build-and-test, containerise]
-    
+    needs: [versioning, docker-build-scan]
+
     steps:
-    - name: Download Docker image
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET (for act only)
+      if: env.ACT == 'true'
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore, Build and Publish locally (for act)
+      if: env.ACT == 'true'
+      run: |
+        dotnet restore
+        dotnet publish --configuration Release --output ./publish
+
+    - name: Download source artifacts
+      if: env.ACT != 'true'
       uses: actions/download-artifact@v4
       with:
-        name: docker-image
-        path: /tmp
-        
-    - name: Load Docker image
-      run: docker load --input /tmp/image.tar
-      
-    - name: Test container output
+        name: source-code
+        continue-on-error: true
+
+    - name: Download publish artifacts
+      if: env.ACT != 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: dotnet-publish
+        path: ./publish
+        continue-on-error: true
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USER }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Extract metadata (GitHub Actions only)
+      if: env.ACT != 'true'
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.IMAGE_NAME }}
+        tags: |
+          type=raw,value=${{ needs.versioning.outputs.version }}
+          type=raw,value=latest
+
+    - name: Build and Push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ${{ env.ACT == 'true' && 'Dockerfile.act' || 'Dockerfile' }}
+        push: true
+        tags: |
+          ${{ env.IMAGE_NAME }}:${{ needs.versioning.outputs.version }}
+          ${{ env.IMAGE_NAME }}:latest
+        labels: ${{ env.ACT != 'true' && steps.meta.outputs.labels || '' }}
+        cache-from: ${{ env.ACT != 'true' && 'type=gha' || '' }}
+        cache-to: ${{ env.ACT != 'true' && 'type=gha,mode=max' || '' }}
+        build-args: |
+          VERSION=${{ needs.versioning.outputs.version }}
+        platforms: linux/amd64
+
+  test-container:
+    name: Test Container Output
+    runs-on: ubuntu-latest
+    needs: [versioning, docker-push]
+
+    steps:
+    - name: Run container and verify output
       run: |
-        OUTPUT=$(docker run --rm ${{ env.IMAGE_NAME }}:${{ needs.build-and-test.outputs.version }})
-        
+        OUTPUT=$(docker run --rm ${{ env.IMAGE_NAME }}:${{ needs.versioning.outputs.version }})
+        echo "Container output: $OUTPUT"
+
         if [[ "$OUTPUT" == *"Hello World!"* ]]; then
           echo "Container test passed: Output contains 'Hello World!'"
         else
-          echo "Container test failed: Output does not contain 'Hello World!'"
+          echo "Container test failed: Output does not contain 'Hello World'"
           exit 1
         fi
 
   finalize:
+    name: Pipeline Summary
     runs-on: ubuntu-latest
-    needs: [build-and-test, containerise, test-container]
+    needs: [versioning, build, test, publish, docker-build-scan, docker-push, test-container]
     if: always()
 
-    steps:        
-    - name: Print Pipeline Summary
+    steps:
+    - name: Generate pipeline summary
+      env:
+        VERSION: ${{ needs.versioning.outputs.version }}
+        DIGEST: ${{ needs.docker-build-scan.outputs.image-digest }}
+        VERSIONING_STATUS: ${{ needs.versioning.result }}
+        BUILD_STATUS: ${{ needs.build.result }}
+        TEST_STATUS: ${{ needs.test.result }}
+        PUBLISH_STATUS: ${{ needs.publish.result }}
+        DOCKER_BUILD_STATUS: ${{ needs.docker-build-scan.result }}
+        DOCKER_PUSH_STATUS: ${{ needs.docker-push.result }}
+        CONTAINER_TEST_STATUS: ${{ needs.test-container.result }}
       run: |
-        echo "Build Information:"
-        echo "  • Version: ${{ needs.build-and-test.outputs.version || 'N/A (build failed)' }}"
-        echo "  • Image: ${{ env.IMAGE_NAME }}:${{ needs.build-and-test.outputs.version || 'N/A' }}"
-        echo "  • Git SHA: ${{ github.sha }}"
-        echo "  • Workflow: ${{ github.workflow }}"
-        echo "  • Run Number: ${{ github.run_number }}"
+        echo "Pipeline Execution Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "Build Information" >> $GITHUB_STEP_SUMMARY
+        echo "- Version: ${VERSION:-N/A}" >> $GITHUB_STEP_SUMMARY
+        echo "- Image: $IMAGE_NAME:${VERSION:-N/A}" >> $GITHUB_STEP_SUMMARY
+        echo "- Registry: $REGISTRY" >> $GITHUB_STEP_SUMMARY
+        echo "- Digest: ${DIGEST:-N/A}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "Job Status" >> $GITHUB_STEP_SUMMARY
+        echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Versioning | ${VERSIONING_STATUS} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Build | ${BUILD_STATUS} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Test | ${TEST_STATUS} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Publish | ${PUBLISH_STATUS} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Docker Build & Scan | ${DOCKER_BUILD_STATUS} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Docker Push | ${DOCKER_PUSH_STATUS} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Container Test | ${CONTAINER_TEST_STATUS} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        echo "Docker Pull Commands" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull $IMAGE_NAME:${VERSION:-latest}" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull $IMAGE_NAME:latest" >> $GITHUB_STEP_SUMMARY
+
+        echo "Pipeline Execution Summary"
+        echo "Version: ${VERSION:-N/A}"
         echo ""
-        echo "Docker Information:"
-        echo "  • Registry: ${{ env.REGISTRY }}"
-        echo "  • Repository: ${{ env.IMAGE_NAME }}"
-        echo "  • Tags: ${{ needs.build-and-test.outputs.version || 'N/A' }}, latest"
-        echo ""
-        echo "Status: build-and-test=${{ needs.build-and-test.result }}, containerise=${{ needs.containerise.result }}, test-container=${{ needs.test-container.result }}"
+        echo "Job Status:"
+        echo "  Versioning: ${VERSIONING_STATUS}"
+        echo "  Build: ${BUILD_STATUS}"
+        echo "  Test: ${TEST_STATUS}"
+        echo "  Publish: ${PUBLISH_STATUS}"
+        echo "  Docker Build & Scan: ${DOCKER_BUILD_STATUS}"
+        echo "  Docker Push: ${DOCKER_PUSH_STATUS}"
+        echo "  Container Test: ${CONTAINER_TEST_STATUS}"
