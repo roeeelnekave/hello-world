@@ -2,12 +2,21 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: hello-world-job
+  labels:
+    app: hello-world
 spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
   template:
+    metadata:
+      labels:
+        job: hello-world
     spec:
+      restartPolicy: OnFailure
       containers:
       - name: hello-world
         image: roeeelnekave/hello-world:latest
+        imagePullPolicy: Always
         resources:
           requests:
             memory: "64Mi"
@@ -15,4 +24,3 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "100m"
-      restartPolicy: OnFailure
