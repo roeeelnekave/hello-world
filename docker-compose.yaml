@@ -1,32 +1,33 @@
 services:
   hello-world:
-    image: roeeelnekave/hello-world:${VERSION:-latest}
+    image: roeeelnekave/hello-world:${VERSION:-latest} # Replaceable image version
     container_name: hello-world-app
     
-    restart: "no"
+    restart: "no" # No restart policy – useful for one-shot jobs
     
-    read_only: true
+    read_only: true # Enforce read-only root filesystem for maximum runtime security
 
     cap_drop: # Drops all Linux capabilities from the container for maximum security.
       - ALL
     security_opt: # Prevents the container from gaining any additional privileges, even if binaries have setuid/setgid.
       - no-new-privileges:true
-    user: "1001:1001"
+
+    user: "1001:1001"  # Run as non-root user (defined inside Dockerfile)
     
     deploy:
       resources:
         limits:
-          memory: 128M
-          cpus: '0.1'
+          memory: 128M 
+          cpus: '0.1'  
         reservations:
-          memory: 64M
+          memory: 64M  
           cpus: '0.05'
     
     environment:
       - DOTNET_RUNNING_IN_CONTAINER=true
     
     logging:
-      driver: "json-file"
+      driver: "json-file" # Default logging driver (compatible with docker logs)
       options:
-        max-size: "10m"
-        max-file: "3"
+        max-size: "10m"  
+        max-file: "3"   

@@ -80,25 +80,27 @@ docker build -t hello-world .
 ```bash
 # Prerequisite: 
    - A DockerHub account
-   - A DockerHub personal access token (PAT)
+   - A DockerHub personal access token
+   - GitHub personal access token
    - .NET SDK 8.0+
    - Docker
    - act CLI
 
 
 # Create secrets file for authentication (DockerHub + GitHub Token)
+
 cat <<EOF > .secrets
 DOCKERHUB_USER=<your-dockerhub-user>
 DOCKERHUB_TOKEN=<your-dockerhub-access-token>
 GITHUB_TOKEN=<your-github-personal-access-token>
 EOF
 
-# Run the full pipeline using secrets file (Apple M1/M2 compatible)
+# Run the full pipeline using secrets file
 act push \
   -P ubuntu-latest=catthehacker/ubuntu:full-latest \
   --secret-file .secrets
-# Recommended: Use system credential manager
 
+# Recommended: Use system credential manager
 
 ```
 
